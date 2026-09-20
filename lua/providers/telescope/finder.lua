@@ -9,7 +9,7 @@ function M.get_symbols(resolver, opts)
 	local Async = require('utils.async')
 	local ok, onoma = pcall(require('bridge.utils').load_bridge)
 	if not ok or onoma == nil then
-		vim.notify_once('Onoma did not load correctly: ' .. onoma, vim.log.levels.ERROR)
+		vim.notify_once('Onoma did not load correctly: ' .. tostring(onoma), vim.log.levels.ERROR)
 		return
 	end
 
@@ -17,7 +17,7 @@ function M.get_symbols(resolver, opts)
 	local context = onoma.create_context(buffer.current_buffer_path(), opts.symbol_kinds or nil)
 
 	return function(query)
-		return Async(function()
+		local locations, timed_out = Async(function()
 			local locations = {}
 
 			osc.set_progress_indicator(nil)
@@ -56,6 +56,13 @@ function M.get_symbols(resolver, opts)
 
 			return locations
 		end):await()
+
+		if timed_out then
+			require('utils.osc').clear_progress_indicator()
+			vim.notify_once('Onoma timed out resolving symbols', vim.log.levels.WARN)
+		end
+
+		return locations or {}
 	end
 end
 

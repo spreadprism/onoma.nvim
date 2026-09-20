@@ -1,14 +1,19 @@
 ---@class onoma.SnacksProvider: onoma.Provider
 
----@param resolver onoma.Resolver
+---@param state { resolver: onoma.Resolver|nil }
 ---@param opts onoma.Config
 ---@return snacks.picker.Config
-local function get_symbols(resolver, opts)
+local function get_symbols(state, opts)
 	return vim.tbl_deep_extend('force', {
 		live = true,
 		title = opts.snacks.title,
 		finder = function(picker, ctx)
-			return require('providers.snacks.finder').get_symbols(resolver, picker, ctx, opts)
+			if not state.resolver then
+				vim.notify('Onoma is still initialising', vim.log.levels.WARN)
+				return {}
+			end
+
+			return require('providers.snacks.finder').get_symbols(state.resolver, picker, ctx, opts)
 		end,
 		format = require('providers.snacks.format').lsp_symbol,
 		formatters = {
@@ -57,43 +62,50 @@ return {
 			error('Cannot register pickers as Snacks is not enabled')
 		end
 
-		local project_directory = { vim.fn.getcwd() }
+		local cwd = vim.fn.getcwd()
+		local project_directory = { cwd }
+
+		local indexable, reason = Onoma.is_indexable(cwd)
+		if not indexable then
+			log.warn('Skipping Onoma initialisation: ' .. tostring(reason))
+			vim.notify_once('Onoma is disabled here: ' .. tostring(reason), vim.log.levels.WARN)
+			return
+		end
 
 		log.info('Initialising Snacks integration for: ' .. table.concat(project_directory, ', '))
 
-		local resolver, watcher = unpack(Async(function()
+		---@type { resolver: onoma.Resolver|nil }
+		local state = { resolver = nil }
+
+		-- Register the source up front: initialisation happens in the background so
+		-- that a slow (or very large) project never blocks the editor.
+		Snacks.picker.sources.get_symbols = get_symbols(state, opts)
+
+		Async(function()
 			local ok, resolver = pcall(Onoma.new_resolver, project_directory)
 			if not ok then
-				log.error('Failed to create resolver: ' .. resolver)
-				return { nil, nil }
+				log.error('Failed to create resolver: ' .. tostring(resolver))
+				return
 			end
 
 			local ok, watcher = pcall(Onoma.new_watcher, project_directory)
 			if not ok then
-				log.error('Failed to create watcher: ' .. watcher)
-				return { nil, nil }
+				log.error('Failed to create watcher: ' .. tostring(watcher))
+				return
 			end
 
-			return {
-				resolver,
-				watcher,
-			}
-		end):await())
+			state.resolver = resolver
 
-		Async(function()
 			local ok, err = pcall(watcher.start, watcher)
-
 			if not ok then
-				log.error('Failed to start watcher: ' .. err)
+				log.error('Failed to start watcher: ' .. tostring(err))
+				return
 			end
 
 			local ok, err = pcall(watcher.run_full_index, watcher)
-
 			if not ok then
-				log.error('Failed to run full index: ' .. err)
+				log.error('Failed to run full index: ' .. tostring(err))
 			end
 		end):run()
-
-		Snacks.picker.sources.get_symbols = get_symbols(resolver, opts)
 	end,
 }

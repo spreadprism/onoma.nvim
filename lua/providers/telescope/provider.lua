@@ -14,44 +14,62 @@ return {
 		local Onoma = require('utils.onoma')
 		local log = require('utils.log')
 
-		local project_directory = { vim.fn.getcwd() }
+		local cwd = vim.fn.getcwd()
+		local project_directory = { cwd }
+
+		local indexable, reason = Onoma.is_indexable(cwd)
+		if not indexable then
+			log.warn('Skipping Onoma initialisation: ' .. tostring(reason))
+
+			return {
+				get_symbols = function()
+					vim.notify('Onoma is disabled here: ' .. tostring(reason), vim.log.levels.WARN)
+				end,
+			}
+		end
 
 		log.info('Initialising Telescope integration for: ' .. table.concat(project_directory, ', '))
 
-		local resolver, watcher = unpack(Async(function()
+		---@type { resolver: onoma.Resolver|nil }
+		local state = { resolver = nil }
+
+		-- Initialisation runs in the background: blocking here would freeze the
+		-- editor for as long as the initial index takes.
+		Async(function()
 			local ok, resolver = pcall(Onoma.new_resolver, project_directory)
 			if not ok then
-				log.error('Failed to create resolver: ' .. resolver)
+				log.error('Failed to create resolver: ' .. tostring(resolver))
+				return
 			end
 
 			local ok, watcher = pcall(Onoma.new_watcher, project_directory)
 			if not ok then
-				log.error('Failed to create watcher: ' .. watcher)
+				log.error('Failed to create watcher: ' .. tostring(watcher))
+				return
 			end
 
-			return {
-				resolver,
-				watcher,
-			}
-		end):await())
+			state.resolver = resolver
 
-		Async(function()
 			local ok, err = pcall(watcher.start, watcher)
-
 			if not ok then
-				log.error('Failed to start watcher: ' .. err)
+				log.error('Failed to start watcher: ' .. tostring(err))
+				return
 			end
 
 			local ok, err = pcall(watcher.run_full_index, watcher)
-
 			if not ok then
-				log.error('Failed to run full index: ' .. err)
+				log.error('Failed to run full index: ' .. tostring(err))
 			end
 		end):run()
 
 		return {
 			get_symbols = function(opts)
 				opts = vim.tbl_deep_extend('force', require('config'), opts == nil and {} or opts)
+
+				if not state.resolver then
+					vim.notify('Onoma is still initialising', vim.log.levels.WARN)
+					return
+				end
 
 				pickers
 					.new(opts, {
@@ -61,7 +79,7 @@ return {
 
 						finder = finders.new_dynamic({
 							entry_maker = require('providers.telescope.format').lsp_symbol(),
-							fn = require('providers.telescope.finder').get_symbols(resolver, opts),
+							fn = require('providers.telescope.finder').get_symbols(state.resolver, opts),
 						}),
 						sorter = require('telescope.sorters').Sorter:new({
 							discard = false,

@@ -67,7 +67,20 @@ local function new_task(fn)
 	local function step()
 		local ok, value = coroutine.resume(task.co)
 		if not ok then
-			error('Coroutine error: ' .. tostring(value))
+			if task.timer then
+				task.timer:stop()
+				task.timer:close()
+				task.timer = nil
+			end
+
+			vim.notify('Onoma coroutine error: ' .. tostring(value), vim.log.levels.ERROR)
+
+			-- Unblock any `await` waiting on this task
+			if task.on_done then
+				task.on_done(nil)
+			end
+
+			return
 		end
 
 		local dead = coroutine.status(task.co) == 'dead'
@@ -96,10 +109,18 @@ local function new_task(fn)
 	return task
 end
 
---- Await final value (logically blocking, UI-safe)
+--- The longest `await` will block the editor for before giving up.
+---
+--- `await` stops Neovim from processing input entirely, so it must never wait
+--- indefinitely: a slow (or stuck) index on a huge directory would otherwise
+--- look like a hard freeze.
+Async.await_timeout = 10000
+
+--- Await final value (logically blocking - avoid on startup paths)
 ---@generic T
----@return T
-function AsyncTask:await()
+---@param timeout? integer Milliseconds to wait before giving up (default: `Async.await_timeout`)
+---@return T|nil, boolean timed_out
+function AsyncTask:await(timeout)
 	local result
 	local done = false
 
@@ -110,11 +131,15 @@ function AsyncTask:await()
 
 	self:start()
 
-	vim.wait(1e9, function()
+	local ok = vim.wait(timeout or Async.await_timeout, function()
 		return done
 	end)
 
-	return result
+	if not ok then
+		return nil, true
+	end
+
+	return result, false
 end
 
 --- Run task without blocking

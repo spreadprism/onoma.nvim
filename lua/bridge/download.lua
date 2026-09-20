@@ -136,7 +136,7 @@ function M.download_bridge()
 
 	ok, result = pcall(download_or_return_bridge, constants.REPOSITORY_OWNER, constants.REPOSITORY_NAME, release_tag)
 	if not ok then
-		coroutine.yield('Failed to download bridge: ' .. result)
+		coroutine.yield('Failed to download bridge: ' .. tostring(result))
 		return
 	end
 	local bridge_file = result
@@ -145,7 +145,7 @@ function M.download_bridge()
 	if not ok then
 		os.remove(bridge_file)
 
-		coroutine.yield('Failed to download bridge checksum: ' .. result)
+		coroutine.yield('Failed to download bridge checksum: ' .. tostring(result))
 		return
 	end
 	local checksum_file = result
@@ -156,7 +156,7 @@ function M.download_bridge()
 		os.remove(bridge_file)
 		os.remove(checksum_file)
 
-		coroutine.yield('Failed to verify bridge against checksum: ' .. result)
+		coroutine.yield('Failed to verify bridge against checksum: ' .. tostring(result))
 		return
 	end
 

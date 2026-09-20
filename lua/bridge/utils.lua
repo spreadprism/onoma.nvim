@@ -116,8 +116,7 @@ function M.load_bridge()
 	local ok, result = pcall(M.get_target)
 
 	if not ok then
-		error(string.format('Error loading library from %s: %s', result))
-		return
+		error(string.format('Error resolving bridge target: %s', tostring(result)))
 	end
 
 	local lib = M.get_bridge_path() .. '/lib' .. constants.LIBRARY_NAME .. '.' .. result.extension

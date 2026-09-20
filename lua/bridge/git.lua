@@ -100,7 +100,7 @@ function M.verify_checksum(binary_path, checksum_file)
 	local f, err = io.open(checksum_file, 'r')
 
 	if not f then
-		error('Failed to open checksum file: ' .. err)
+		error('Failed to open checksum file: ' .. tostring(err))
 	end
 
 	local content = f:read('*l') -- read first line
